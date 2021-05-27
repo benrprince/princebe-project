@@ -1,0 +1,33 @@
+.oauth-background {
+    min-height: 100vh;
+    background-image: linear-gradient( rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.75) ), url("./images/mahomes.jpg");
+    background-size: cover;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+
+.header-text {
+    font-size: 100px;
+    text-shadow: 4px 4px 4px rgb(220, 255, 220);
+}
+
+.button-row {
+    margin-top: 200px;
+}
+
+.oauth-button {
+
+    background: #171A26;
+    color: white;
+    font-size: 20px;
+    border-radius: 200px;
+    width: 200px;
+    min-height: 200px;
+}
+
+.oauth-button:hover {
+
+    background-color:rgb(220, 255, 220);
+
+}
