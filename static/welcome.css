@@ -49,13 +49,23 @@
 
 .modal {
     background-color: white;
-    width: 30%;
-    height: 30%;
-    top: 50%;
-    left: 50%;
+    width: 33%;
+    height: 60%;
+    top: 20%;
+    left: 33%;
     border-radius: 10px;
     display: flex;
     justify-content: space-around;
     align-items: center;
     flex-direction: column;
+}
+
+.token {
+    width: 90%;
+    height: 80%;
+    overflow: auto;
+    float: left;
+    position: relative;
+    overflow-wrap: break-word;
+    margin-left: -5px;
 }

@@ -4,25 +4,14 @@
 
 <link rel="stylesheet" href="./static/welcome.css">
 <div class="oauth-background">
-    <div class="container">
-        <div class="col">
-            <div class="row">
-                <h1 class="header-text">Welcome!</h1
-                <h3 class="small-text">Click button to authenticate with Google and use tickets API</h3>   
-            </div>
-            <div class="row">
-                <form action="/welcome" method="POST">
-                    <input class="btn oauth-button" type="submit" value="Tickets API" name="submitbutton">
-                </form>
-            </div>
-        </div>    
-    </div>
 </div>
 <div class="modal-bg">
     <div class="modal">
-        <h2>Hello World</h2>
-        <h3>Name: </h3>
+        <h2>Hello {{f_name}} {{l_name}}</h2>
         <h3>Token: </h3>
+        <div class="token">
+            {{token}}
+        </div>
     </div>
 </div> 
 
