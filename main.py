@@ -198,7 +198,7 @@ def stadiums_post_get():
         res.status_code = 405
         return res
 
-@app.route('/stadiums/<sid>', methods=["GET"])
+@app.route('/stadiums/<sid>', methods=["GET", "PUT", "PATCH"])
 def stadium_get(sid):
     if request.method == "GET":
 
@@ -216,6 +216,33 @@ def stadium_get(sid):
             stadium["self"] = url
 
         return json.dumps(stadium)
+
+    elif request.method == "PUT":
+        return
+
+    elif request.method == "PATCH":
+
+        stadium_key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=stadium_key)
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}',404)
+        else:
+
+            if request.is_json != True:
+                res = make_response({"Error": "Request must be application/json"})
+                res.mimetype = 'application/json'
+                res.status_code = 415
+                return res
+            
+            content = request.get_json()
+
+            stadium = functions.patch_stadium(content, stadium)
+
+            return (stadium, 200)
+
+    else:
+        return "Method not recognized"
+         
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
