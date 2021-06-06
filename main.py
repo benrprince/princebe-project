@@ -25,7 +25,7 @@ app.config['SECRET_KEY'] = 'sessionsecret'
 # Client Info for OAuth
 CLIENT_ID = "375849959607-89c1t67ikbte0qvgeitaq64brafgptjj.apps.googleusercontent.com"
 CLIENT_SECRET = "B7YzLUIPg00S31UuX9tl8a4B"
-REDIRECT = "https://princebe-project.uc.r.appspot.com/welcome"
+REDIRECT = "https://princebe-project.wm.r.appspot.com/welcome"
 
 def stateGenerator(n):
     start = 10**(n-1)
