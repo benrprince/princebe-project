@@ -25,7 +25,7 @@ app.config['SECRET_KEY'] = 'sessionsecret'
 # Client Info for OAuth
 CLIENT_ID = "375849959607-89c1t67ikbte0qvgeitaq64brafgptjj.apps.googleusercontent.com"
 CLIENT_SECRET = "B7YzLUIPg00S31UuX9tl8a4B"
-REDIRECT = "http://localhost:8080/welcome"
+REDIRECT = "https://princebe-project.uc.r.appspot.com/welcome"
 
 def stateGenerator(n):
     start = 10**(n-1)
@@ -116,7 +116,7 @@ def users_get():
         for user in results:
             user["id"] = user.key.id
 
-        return json.dumps(results)        # TODO: remove irrelevant fields
+        return json.dumps(results)
 
     else:
         return "Method not recognized"
@@ -271,8 +271,24 @@ def stadium_get_put_patch_delete(sid):
 
     elif request.method == "DELETE":
         # Delete a stadium, remove all tickets associated to stadium
-        # TODO
-        return
+        key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=key)
+
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}',404)
+
+        else:
+            query = client.query(kind=constants.tickets)
+            results = list(query.fetch())
+
+            stadium_tickets = [ticket for ticket in results if ticket["stadium"] == stadium.key.id]
+
+            for ticket in stadium_tickets:
+                ticket_key = client.key(constants.tickets, ticket.key.id)
+                client.delete(ticket_key)
+
+            client.delete(key)
+            return ('', 204)
 
     else:
         return "Method not recognized"
@@ -304,7 +320,6 @@ def tickets_get_post(sid):
             res.status_code = 400
             return res
 
-        # Check if seat is taken
         if not functions.check_seat_availability(content):
             res = make_response({"Error": "Ticket already exists for this event"})
             res.mimetype = 'application/json'
@@ -331,6 +346,14 @@ def tickets_get_post(sid):
 def tickets_get_put_delete(tid):
     if request.method == "GET":
         # Returns ticket
+        # If oauth is being used
+        public = False
+
+        try:
+            headers = request.headers['Authorization'].split()
+        except Exception:
+            public = True
+
         # get ticket from datastore
         ticket_key = client.key(constants.tickets, int(tid))
         ticket = client.get(key=ticket_key)
@@ -339,13 +362,36 @@ def tickets_get_put_delete(tid):
         if ticket == None:
             return ('{"Error": "No ticket with this ticket_id exists"}', 404)
 
-        ticket["id"] = ticket.key.id
-        url = request.url_root + '/tickets/' + str(ticket["id"])
-        ticket["self"] = url
+        if not public:
+            token = headers[1]
+            req = google_auth_request.Request()
 
-        # TODO: remove sub if purchased, change to true
+            #verify id_token with google
+            idinfo = id_token.verify_oauth2_token(token, req, CLIENT_ID)
 
-        return (ticket, 200)
+            if ticket["purchased"] == idinfo["sub"]:
+
+                ticket["id"] = ticket.key.id
+                url = request.url_root + '/tickets/' + str(ticket["id"])
+                ticket["self"] = url
+                return (ticket, 200)
+                
+            else:
+                ticket["id"] = ticket.key.id
+                url = request.url_root + '/tickets/' + str(ticket["id"])
+                ticket["self"] = url
+                ticket["purchased"] = "True"
+
+                return (ticket, 200)
+            
+        else:
+
+            ticket["id"] = ticket.key.id
+            url = request.url_root + '/tickets/' + str(ticket["id"])
+            ticket["self"] = url
+            ticket["purchased"] = "True"
+
+            return (ticket, 200)
 
     elif request.method == "PUT":
         # Adds the current user to the ticket and changes purchased to true
@@ -384,17 +430,6 @@ def tickets_get_put_delete(tid):
         ticket["id"] = ticket.key.id
         url = request.url_root + '/tickets/' + str(ticket["id"])
         ticket["self"] = url
-
-        # update user to have ticket id in ticket list
-        query = client.query(kind=constants.users)
-        results = list(query.fetch())
-
-        # May not need
-        # for user in results:
-        #     if user['sub'] == idinfo['sub']:
-        #         user_tickets = user["tickets"].append(ticket)
-        #         user.update({"first name": user["first name"], "last name": user["last name"], "sub": user["sub"],
-        #                         "tickets": user_tickets})
 
         return (ticket, 200)
 
@@ -437,17 +472,6 @@ def tickets_get_put_delete(tid):
         ticket["id"] = ticket.key.id
         url = request.url_root + '/tickets/' + str(ticket["id"])
         ticket["self"] = url
-
-        # update user to remove ticket from ticket list
-        query = client.query(kind=constants.users)
-        results = list(query.fetch())
-
-        # May not need
-        # for user in results:
-        #     if user['sub'] == idinfo['sub']:
-        #         user_tickets = user["tickets"].remove(ticket)
-        #         user.update({"first name": user["first name"], "last name": user["last name"], "sub": user["sub"],
-        #                         "tickets": user_tickets})
 
         return ('', 204)
 
@@ -508,9 +532,77 @@ def tickets_get():
     if request.method == "GET":
         # Shows all tickets, purchased or not, but won't show who owns it
         # If token is used, shows all tickets owned by user
+        query = client.query(kind=constants.tickets)
+        q_limit = int(request.args.get('limit', '5'))
+        q_offset = int(request.args.get('offset', '0'))
+        l_iterator = query.fetch(limit=q_limit, offset=q_offset)
+        pages = l_iterator.pages
+        results = list(next(pages))
+        ticket_count = len(results)
 
-        # TODO
-        return
+        if l_iterator.next_page_token:
+            next_offset = q_offset + q_limit
+            next_url = request.base_url + "?limit=" + str(q_limit) + "&offset=" + str(next_offset)
+        else:
+            next_url = None
+
+        public = False
+
+        try:
+            headers = request.headers['Authorization'].split()
+        except Exception:
+            public = True
+
+        if not public:
+            token = headers[1]
+            req = google_auth_request.Request()
+
+        # Verify id_token with google
+
+            try:
+                
+                idinfo = id_token.verify_oauth2_token(token, req, CLIENT_ID)
+
+                query = client.query(kind=constants.tickets)
+                results = list(query.fetch())
+
+                owners_tickets = [ticket for ticket in results if ticket["purchased"] == idinfo["sub"]]
+
+                for ticket in owners_tickets:
+                    ticket["id"] = ticket.key.id
+                    url = request.url_root + '/tickets/' + str(ticket["id"])
+                    ticket["self"] = url
+
+                output = {"tickets": owners_tickets}
+                output["count"] = ticket_count
+
+                if next_url:
+                    output["next"] = next_url
+                return json.dumps(output)
+
+            except ValueError:
+                return ('{"Error": "Invalid Bearer Token"}', 401)
+
+        else:
+            
+            query = client.query(kind=constants.tickets)
+            results = list(query.fetch())
+
+            public_tickets = [ticket for ticket in results if ticket["purchased"] is None]
+
+            for ticket in public_tickets:
+                ticket["id"] = ticket.key.id
+                url = request.url_root + '/tickets/' + str(ticket["id"])
+                ticket["self"] = url
+                if ticket["purchased"] is not None:
+                    ticket["purchased"] = "True"
+
+            output = {"tickets": public_tickets}
+            output["count"] = ticket_count
+
+            if next_url:
+                output["next"] = next_url
+            return json.dumps(output)
 
     else:
         return "Method not recognized"

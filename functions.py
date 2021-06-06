@@ -94,6 +94,9 @@ def check_seat_availability(content):
     query = client.query(kind=constants.tickets)
     results = list(query.fetch())
 
+    if results == []:
+        return True
+
     for ticket in results:
         if (ticket["event"] == content["event"]) and \
             (ticket["date"] == content["date"]) and \
