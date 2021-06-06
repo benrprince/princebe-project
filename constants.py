@@ -2,3 +2,4 @@
 
 users = "users"
 stadiums = "stadiums"
+tickets = "tickets"

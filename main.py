@@ -89,7 +89,7 @@ def welcome():
                 # Initialize new user if user with the sub doesn't already exist
                 new_user = datastore.entity.Entity(key=client.key(constants.users))
                 new_user.update({"first name": f_name, "last name": l_name, "sub": idinfo["sub"],
-                                "tickets": None})
+                                "tickets": []})
                 client.put(new_user)
                 # add self link
                 new_user["id"] = new_user.key.id
@@ -198,8 +198,8 @@ def stadiums_post_get():
         res.status_code = 405
         return res
 
-@app.route('/stadiums/<sid>', methods=["GET", "PUT", "PATCH"])
-def stadium_get(sid):
+@app.route('/stadiums/<sid>', methods=["GET", "PUT", "PATCH", "DELETE"])
+def stadium_get_put_patch_delete(sid):
     if request.method == "GET":
 
         # get stadium from datastore
@@ -218,7 +218,36 @@ def stadium_get(sid):
         return json.dumps(stadium)
 
     elif request.method == "PUT":
-        return
+        stadium_key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=stadium_key)
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}',404)
+        else:
+
+            if request.is_json != True:
+                res = make_response({"Error": "Request must be application/json"})
+                res.mimetype = 'application/json'
+                res.status_code = 415
+                return res
+
+            content = request.get_json()
+
+            if ('name' not in content) or ('sport' not in content) or \
+            ('location' not in content) or ('capacity' not in content):
+                res = make_response({"Error": "The request object is missing at least one of the required attributes"})
+                res.mimetype = 'application/json'
+                res.status_code = 400
+                return res
+
+            stadium.update({"name": content["name"], "sport": content["sport"], 
+                        "location": content["location"], "capacity": content["capacity"]})
+            client.put(stadium)
+
+            stadium["id"] = stadium.key.id
+            url = request.url_root + '/stadiums/' + str(stadium["id"])
+            stadium["self"] = url
+
+            return (stadium, 201)
 
     elif request.method == "PATCH":
 
@@ -239,6 +268,249 @@ def stadium_get(sid):
             stadium = functions.patch_stadium(content, stadium)
 
             return (stadium, 200)
+
+    elif request.method == "DELETE":
+        # Delete a stadium, remove all tickets associated to stadium
+        # TODO
+        return
+
+    else:
+        return "Method not recognized"
+
+@app.route('/stadiums/<sid>/tickets', methods=["GET", "POST"])
+def tickets_get_post(sid):
+    if request.method == "GET":
+        # Get all tickets from a stadium, if purchased, don't show owner, just show purchased as true
+        stadium_key = client.key(constants.stadiums, int(sid))
+        return
+
+    elif request.method == "POST":
+        # Create a ticket with purchase set to None
+        # get stadium from datastore
+        stadium_key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=stadium_key)
+
+        # return 404 if stadium doesn't exist
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}', 404)
+
+        content = request.get_json()
+
+        # Check for all attributes
+        if ('sport' not in content) or ('event' not in content) or \
+            ('location' not in content) or ('date' not in content):
+            res = make_response({"Error": "The request object is missing at least one of the required attributes"})
+            res.mimetype = 'application/json'
+            res.status_code = 400
+            return res
+
+        # Check if seat is taken
+        if not functions.check_seat_availability(content):
+            res = make_response({"Error": "Ticket already exists for this event"})
+            res.mimetype = 'application/json'
+            res.status_code = 403
+            return res
+
+        # Create/add ticket to datastore
+        new_ticket = datastore.entity.Entity(key=client.key(constants.tickets))
+        new_ticket.update({"sport": content["sport"], "event": content["event"], 
+                            "location": content["location"], "date": content["date"],
+                            "stadium": stadium.key.id, "purchased": None})
+        client.put(new_ticket)
+        new_ticket["id"] = new_ticket.key.id
+        url = request.url_root + '/tickets/' + str(new_ticket["id"])
+        new_ticket["self"] = url
+
+        return (new_ticket, 201)
+
+    else:
+        return "Method not recognized"
+
+
+@app.route('/tickets/<tid>', methods=["GET", "PUT", "DELETE"])
+def tickets_get_put_delete(tid):
+    if request.method == "GET":
+        # Returns ticket
+        # get ticket from datastore
+        ticket_key = client.key(constants.tickets, int(tid))
+        ticket = client.get(key=ticket_key)
+
+        # return 404 if ticket doesn't exist
+        if ticket == None:
+            return ('{"Error": "No ticket with this ticket_id exists"}', 404)
+
+        ticket["id"] = ticket.key.id
+        url = request.url_root + '/tickets/' + str(ticket["id"])
+        ticket["self"] = url
+
+        # TODO: remove sub if purchased, change to true
+
+        return (ticket, 200)
+
+    elif request.method == "PUT":
+        # Adds the current user to the ticket and changes purchased to true
+        # get ticket from datastore
+        ticket_key = client.key(constants.tickets, int(tid))
+        ticket = client.get(key=ticket_key)
+        
+        # return 404 if ticket doesn't exist
+        if ticket == None:
+            return ('{"Error": "No ticket with this ticket_id exists"}', 404)
+
+        if ticket["purchased"] is not None:
+            return ('{"Error": "The ticket is already purchased"}', 403)
+
+        # Get the bearer token
+        try:
+            headers = request.headers['Authorization'].split()
+        except Exception:
+            return ('{"Error": "Invalid Bearer Token"}', 401)
+
+        token = headers[1]
+        req = google_auth_request.Request()
+        
+        # Verify id_token with google
+        try:
+            idinfo = id_token.verify_oauth2_token(token, req, CLIENT_ID)
+        
+        except ValueError:
+            return ('{"Error": "Invalid Bearer Token"}', 401)
+
+        # update ticket with user sub as purchased
+        ticket.update({"sport": ticket["sport"], "event": ticket["event"], 
+                            "location": ticket["location"], "date": ticket["date"],
+                            "stadium": ticket.key.id, "purchased": idinfo['sub']})
+        client.put(ticket)
+        ticket["id"] = ticket.key.id
+        url = request.url_root + '/tickets/' + str(ticket["id"])
+        ticket["self"] = url
+
+        # update user to have ticket id in ticket list
+        query = client.query(kind=constants.users)
+        results = list(query.fetch())
+
+        # May not need
+        # for user in results:
+        #     if user['sub'] == idinfo['sub']:
+        #         user_tickets = user["tickets"].append(ticket)
+        #         user.update({"first name": user["first name"], "last name": user["last name"], "sub": user["sub"],
+        #                         "tickets": user_tickets})
+
+        return (ticket, 200)
+
+    elif request.method == "DELETE":
+        # Remove owner of ticket and change purchased back to false
+        # get ticket from datastore
+        ticket_key = client.key(constants.tickets, int(tid))
+        ticket = client.get(key=ticket_key)
+        
+        # return 404 if ticket doesn't exist
+        if ticket == None:
+            return ('{"Error": "No ticket with this ticket_id exists"}', 404)
+
+        if ticket["purchased"] == None:
+            return ('{"Error": "Ticket has not been purchased"}', 403)
+
+        # Get the bearer token
+        try:
+            headers = request.headers['Authorization'].split()
+        except Exception:
+            return ('{"Error": "Invalid Bearer Token"}', 401)
+
+        token = headers[1]
+        req = google_auth_request.Request()
+        
+        # Verify id_token with google
+        try:
+            idinfo = id_token.verify_oauth2_token(token, req, CLIENT_ID)
+        
+        except ValueError:
+            return ('{"Error": "Invalid Bearer Token"}', 401)
+
+        if ticket["purchased"] != idinfo["sub"]:
+            return ('{"Error": "Invalid Bearer Token"}', 401)
+        
+        ticket.update({"sport": ticket["sport"], "event": ticket["event"], 
+                            "location": ticket["location"], "date": ticket["date"],
+                            "stadium": ticket.key.id, "purchased": None})
+        client.put(ticket)
+        ticket["id"] = ticket.key.id
+        url = request.url_root + '/tickets/' + str(ticket["id"])
+        ticket["self"] = url
+
+        # update user to remove ticket from ticket list
+        query = client.query(kind=constants.users)
+        results = list(query.fetch())
+
+        # May not need
+        # for user in results:
+        #     if user['sub'] == idinfo['sub']:
+        #         user_tickets = user["tickets"].remove(ticket)
+        #         user.update({"first name": user["first name"], "last name": user["last name"], "sub": user["sub"],
+        #                         "tickets": user_tickets})
+
+        return ('', 204)
+
+    else:
+        return "Method not recognized"
+
+@app.route('/stadiums/<sid>/tickets/<tid>', methods=["DELETE", "PATCH"])
+def tickets_patch_delete(sid, tid):
+    if request.method == "PATCH":
+        # get stadium from datastore
+        key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=key)
+
+        # return 404 if stadium doesn't exist
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}', 404)
+
+        ticket_key = client.key(constants.tickets, int(tid))
+        ticket = client.get(key=ticket_key)
+        
+        # return 404 if ticket doesn't exist
+        if ticket == None:
+            return ('{"Error": "No ticket with this ticket_id exists"}', 404)
+
+        content = request.get_json()
+
+        ticket = functions.patch_ticket(content, ticket)
+        
+        return (ticket, 200)
+    
+    elif request.method == "DELETE":
+        # get stadium from datastore
+        key = client.key(constants.stadiums, int(sid))
+        stadium = client.get(key=key)
+
+        # return 404 if stadium doesn't exist
+        if stadium == None:
+            return ('{"Error": "No stadium with this stadium_id exists"}', 404)
+
+        ticket_key = client.key(constants.tickets, int(tid))
+        ticket = client.get(key=ticket_key)
+        
+        # return 404 if ticket doesn't exist
+        if ticket == None:
+            return ('{"Error": "No ticket with this ticket_id exists"}', 404)
+
+        if ticket["purchased"] is not None:
+            return ('{"Error": "Cannot delete ticket that is purchased"}', 403)
+
+        client.delete(ticket_key)
+        return ('', 204)
+
+    else:
+        return "Method not recognized"
+
+@app.route('/tickets', methods=["GET"])
+def tickets_get():
+    if request.method == "GET":
+        # Shows all tickets, purchased or not, but won't show who owns it
+        # If token is used, shows all tickets owned by user
+
+        # TODO
+        return
 
     else:
         return "Method not recognized"
